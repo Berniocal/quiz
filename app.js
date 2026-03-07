@@ -14,15 +14,14 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const firebaseConfig = {
-  apiKey: 'DOPLN_API_KEY',
-  authDomain: 'DOPLN_AUTH_DOMAIN',
-  databaseURL: 'DOPLN_DATABASE_URL',
-  projectId: 'DOPLN_PROJECT_ID',
-  storageBucket: 'DOPLN_STORAGE_BUCKET',
-  messagingSenderId: 'DOPLN_MESSAGING_SENDER_ID',
-  appId: 'DOPLN_APP_ID'
-};
-
+    apiKey: "AIzaSyA-Y_qYftzPYHh9hCXUM7bMqK7j5pMVbzc",
+    authDomain: "quiz-bad1f.firebaseapp.com",
+    databaseURL: "https://quiz-bad1f-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "quiz-bad1f",
+    storageBucket: "quiz-bad1f.firebasestorage.app",
+    messagingSenderId: "443723924249",
+    appId: "1:443723924249:web:1ef489b7cef75a7c143b88"
+  };
 const app = initializeApp(firebaseConfig);
 const db = getDatabase(app);
 

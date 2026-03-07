@@ -1,19 +1,28 @@
 TÝMY – ODPOVĚDI NA ČAS
 
-Co upravit před nasazením:
-1) V souboru app.js doplň vlastní Firebase konfiguraci do objektu firebaseConfig.
-2) Ve Firebase zapni Realtime Database.
-3) Doporučeně zapni Authentication -> Anonymous, aby šla použít přiložená pravidla.
-4) Nahraj obsah této složky na GitHub Pages nebo Firebase Hosting.
+Co je opravené:
+1) Aplikace už se sama anonymně přihlásí do Firebase.
+2) Opravené načítání, které předtím viselo na úvodní obrazovce.
+3) Přidané ikony PWA.
+4) Nová verze service workeru, aby se lépe přepsala stará cache.
 
-Důležité:
-- Přiložená pravidla jsou pro Realtime Database a počítají s tím, že uživatel je přihlášený anonymně.
-- Aktuální app.js anonymní přihlášení sama nespouští. Pokud chceš opravdu použít tato přísnější pravidla, doplň do app.js ještě Firebase Auth s anonymous sign-in.
-- Pokud chceš nejrychlejší rozběhnutí bez Auth, musíš pravidla uvolnit. To je ale méně bezpečné.
+Co zkontrolovat ve Firebase:
+1) Realtime Database musí být zapnutá.
+2) Authentication -> Sign-in method -> Anonymous musí být zapnuté.
+3) Do Realtime Database -> Rules vlož pravidla a publikuj je.
 
-Doporučená úprava pro anonymous auth v app.js:
-- přidej importy z firebase-auth.js
-- zavolej signInAnonymously(auth) při startu aplikace
+Doporučená testovací pravidla:
+{
+  "rules": {
+    ".read": "auth != null",
+    ".write": "auth != null"
+  }
+}
+
+Nasazení:
+- Nahraj obsah této složky na GitHub Pages nebo Firebase Hosting.
+- Pokud jsi měl starší verzi aplikace, po nasazení ji otevři a udělej tvrdé obnovení.
+- Když by se pořád načítala stará verze, smaž v prohlížeči data webu nebo odinstaluj starou PWA a znovu ji otevři.
 
 Struktura dat v databázi:
 rooms/{kod}

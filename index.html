@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Týmy – odpovědi na čas</title>
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="hero card">
+      <h1>Týmy – odpovědi na čas</h1>
+      <p>Host vytvoří místnost, schválí týmy a řídí kola. Ostatní telefony jen odesílají odpověď.</p>
+    </header>
+
+    <section id="joinView" class="card">
+      <div class="grid2">
+        <div>
+          <label for="teamName">Jméno týmu</label>
+          <input id="teamName" type="text" maxlength="40" placeholder="např. Modří blesci">
+        </div>
+        <div>
+          <label for="roomCode">Pětimístný kód místnosti</label>
+          <input id="roomCode" type="text" inputmode="numeric" maxlength="5" placeholder="12345">
+        </div>
+      </div>
+      <div class="actions">
+        <button id="joinBtn">Vstoupit / vytvořit místnost</button>
+        <button id="randomBtn" class="secondary">Vygenerovat kód</button>
+      </div>
+      <p class="hint">První telefon v místnosti se stane hostem. Další týmy čekají na schválení hostem.</p>
+      <div class="statusRow">
+        <span class="pill" id="localRole">Nepřipojeno</span>
+        <span class="pill" id="roomInfo">Místnost: —</span>
+      </div>
+    </section>
+
+    <section id="hostLobbyView" class="card hidden">
+      <h2>Host – lobby</h2>
+      <div class="statusRow wrapRow">
+        <span class="pill">Kód: <strong id="hostRoomCode">—</strong></span>
+        <span class="pill">Stav: <strong id="hostState">lobby</strong></span>
+        <span class="pill">Kolo: <strong id="hostRound">0</strong></span>
+      </div>
+
+      <div class="split">
+        <div>
+          <h3>Čekající týmy</h3>
+          <div id="pendingTeams" class="list"></div>
+        </div>
+        <div>
+          <h3>Přijaté týmy</h3>
+          <div id="acceptedTeams" class="list"></div>
+        </div>
+      </div>
+
+      <div class="actions stickyActions">
+        <button id="startGameBtn">Začít hru</button>
+      </div>
+      <p class="hint">Po startu mohou týmy poslat odpověď. Host pak kolo ručně zastaví.</p>
+    </section>
+
+    <section id="hostRoundView" class="card hidden">
+      <h2>Host – probíhá kolo</h2>
+      <div class="statusRow wrapRow">
+        <span class="pill">Kód: <strong id="roundRoomCode">—</strong></span>
+        <span class="pill">Kolo: <strong id="roundNumber">1</strong></span>
+        <span class="pill">Čas běží od startu kola</span>
+      </div>
+      <div class="actions stickyActions">
+        <button id="stopRoundBtn" class="danger bigBtn">Zastavit hru</button>
+      </div>
+    </section>
+
+    <section id="hostResultsView" class="card hidden">
+      <h2>Výsledky kola</h2>
+      <div class="statusRow wrapRow">
+        <span class="pill">Kód: <strong id="resultsRoomCode">—</strong></span>
+        <span class="pill">Kolo: <strong id="resultsRoundNumber">1</strong></span>
+      </div>
+      <div id="answersList" class="answers"></div>
+      <div class="actions stickyActions">
+        <button id="nextRoundBtn">Další kolo</button>
+        <button id="endGameBtn" class="secondary">Konec hry</button>
+      </div>
+    </section>
+
+    <section id="hostFinalView" class="card hidden">
+      <h2>Konečné pořadí</h2>
+      <div id="finalRanking" class="answers"></div>
+      <div class="actions stickyActions">
+        <button id="newRoomBtn">Zpět na úvod</button>
+      </div>
+    </section>
+
+    <section id="playerWaitingView" class="card hidden">
+      <h2>Čekání na schválení</h2>
+      <p id="waitingText">Host ještě nepotvrdil připojení tvého týmu.</p>
+    </section>
+
+    <section id="playerReadyView" class="card hidden">
+      <h2>Tým přijat</h2>
+      <p>Počkejte, až host spustí kolo.</p>
+      <div class="statusRow wrapRow">
+        <span class="pill">Tým: <strong id="playerTeamLabel">—</strong></span>
+        <span class="pill">Body: <strong id="playerScoreLabel">0</strong></span>
+      </div>
+    </section>
+
+    <section id="playerRoundView" class="card hidden">
+      <h2>Odpověď týmu</h2>
+      <div class="statusRow wrapRow">
+        <span class="pill">Tým: <strong id="playerRoundTeamLabel">—</strong></span>
+        <span class="pill">Kolo: <strong id="playerRoundNumber">1</strong></span>
+      </div>
+      <label for="answerInput">Vaše odpověď</label>
+      <textarea id="answerInput" rows="4" maxlength="300" placeholder="Sem napište odpověď"></textarea>
+      <div class="actions">
+        <button id="submitAnswerBtn">Odeslat odpověď</button>
+      </div>
+      <p class="hint" id="submitState">Odpověď můžete odeslat jen jednou za kolo.</p>
+    </section>
+
+    <section id="playerHoldView" class="card hidden">
+      <h2>Počkejte na další otázku</h2>
+      <p>Host ukončil kolo. Až spustí další, objeví se znovu pole pro odpověď.</p>
+      <div class="statusRow wrapRow">
+        <span class="pill">Tým: <strong id="playerHoldTeamLabel">—</strong></span>
+        <span class="pill">Body: <strong id="playerHoldScoreLabel">0</strong></span>
+      </div>
+    </section>
+
+    <section id="playerRejectedView" class="card hidden">
+      <h2>Připojení nebylo přijato</h2>
+      <p>Host tento tým do místnosti nepřijal.</p>
+    </section>
+
+    <section id="loadingView" class="card hidden">
+      <h2>Načítání…</h2>
+    </section>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

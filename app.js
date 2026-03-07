@@ -1,10 +1,5 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
 import {
-  getAuth,
-  signInAnonymously,
-  onAuthStateChanged
-} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
-import {
   getDatabase,
   ref,
   onValue,
@@ -12,22 +7,22 @@ import {
   set,
   update,
   push,
+  remove,
   runTransaction,
-  off
+  off,
+  serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const firebaseConfig = {
-  apiKey: 'AIzaSyA-Y_qYftzPYHh9hCXUM7bMqK7j5pMVbzc',
-  authDomain: 'quiz-bad1f.firebaseapp.com',
-  databaseURL: 'https://quiz-bad1f-default-rtdb.europe-west1.firebasedatabase.app',
-  projectId: 'quiz-bad1f',
-  storageBucket: 'quiz-bad1f.firebasestorage.app',
-  messagingSenderId: '443723924249',
-  appId: '1:443723924249:web:1ef489b7cef75a7c143b88'
-};
-
+    apiKey: "AIzaSyA-Y_qYftzPYHh9hCXUM7bMqK7j5pMVbzc",
+    authDomain: "quiz-bad1f.firebaseapp.com",
+    databaseURL: "https://quiz-bad1f-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "quiz-bad1f",
+    storageBucket: "quiz-bad1f.firebasestorage.app",
+    messagingSenderId: "443723924249",
+    appId: "1:443723924249:web:1ef489b7cef75a7c143b88"
+  };
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
 const db = getDatabase(app);
 
 if ('serviceWorker' in navigator) {
@@ -49,19 +44,13 @@ const els = {
   playerHoldTeamLabel: $('playerHoldTeamLabel'), playerHoldScoreLabel: $('playerHoldScoreLabel')
 };
 
-const joinHintEl = document.querySelector('#joinView .hint');
-const defaultJoinHint = joinHintEl ? joinHintEl.textContent : '';
-
 const state = {
   clientId: getOrCreateClientId(),
   roomCode: localStorage.getItem('quiz_roomCode') || '',
   teamId: localStorage.getItem('quiz_teamId') || '',
   role: localStorage.getItem('quiz_role') || '',
   unsubscribe: null,
-  roomData: null,
-  authReady: false,
-  authUid: '',
-  authError: ''
+  roomData: null
 };
 
 if (state.roomCode) els.roomCode.value = state.roomCode;
@@ -77,8 +66,8 @@ els.endGameBtn.addEventListener('click', endGame);
 els.newRoomBtn.addEventListener('click', resetLocalState);
 els.submitAnswerBtn.addEventListener('click', submitAnswer);
 
-bootAuth();
-showOnly('loadingView');
+if (state.roomCode) subscribeRoom(state.roomCode);
+render();
 
 function getOrCreateClientId() {
   let id = localStorage.getItem('quiz_clientId');
@@ -101,25 +90,7 @@ function sanitizeName(value) {
   return (value || '').trim().slice(0, 40);
 }
 
-function bootAuth() {
-  onAuthStateChanged(auth, user => {
-    state.authReady = !!user;
-    state.authUid = user?.uid || '';
-    if (state.roomCode && user) subscribeRoom(state.roomCode);
-    render();
-  });
-
-  signInAnonymously(auth).catch(error => {
-    console.error('Anonymous auth failed:', error);
-    state.authReady = false;
-    state.authError = readableError(error);
-    render();
-  });
-}
-
 async function joinOrCreateRoom() {
-  if (!ensureAuthReady()) return;
-
   const roomCode = sanitizeCode(els.roomCode.value);
   const teamName = sanitizeName(els.teamName.value);
   if (!roomCode || roomCode.length !== 5) {
@@ -131,15 +102,13 @@ async function joinOrCreateRoom() {
     return;
   }
 
-  setLoading('Připojování k místnosti…');
-  const roomRef = ref(db, `rooms/${roomCode}`);
-  let becameHost = false;
+  showOnly('loadingView');
+  els.joinBtn.disabled = true;
 
-  let tx;
   try {
-    tx = await runTransaction(roomRef, current => {
+    const roomRef = ref(db, `rooms/${roomCode}`);
+    const tx = await runTransaction(roomRef, current => {
       if (current === null) {
-        becameHost = true;
         return {
           code: roomCode,
           createdAt: Date.now(),
@@ -152,43 +121,39 @@ async function joinOrCreateRoom() {
         };
       }
       return current;
-    });
-  } catch (error) {
-    console.error('Transaction failed:', error);
-    alert('Nepodařilo se načíst místnost. Zkontroluj pravidla Firebase a anonymní přihlášení.');
-    render();
-    return;
-  }
+    }, { applyLocally: false });
 
-  if (!tx.committed || !tx.snapshot.exists()) {
-    alert('Nepodařilo se vytvořit nebo načíst místnost.');
-    render();
-    return;
-  }
+    if (!tx.snapshot.exists()) {
+      throw new Error('Nepodařilo se vytvořit nebo načíst místnost.');
+    }
 
-  state.roomCode = roomCode;
-  localStorage.setItem('quiz_roomCode', roomCode);
-  subscribeRoom(roomCode);
+    const roomData = tx.snapshot.val();
+    const isHost = roomData?.hostClientId === state.clientId;
 
-  if (becameHost || tx.snapshot.val()?.hostClientId === state.clientId) {
-    state.role = 'host';
-    state.teamId = '';
-    localStorage.setItem('quiz_role', 'host');
-    localStorage.removeItem('quiz_teamId');
-    render();
-    return;
-  }
+    state.roomCode = roomCode;
+    localStorage.setItem('quiz_roomCode', roomCode);
+    subscribeRoom(roomCode);
 
-  state.role = 'player';
-  localStorage.setItem('quiz_role', 'player');
+    if (isHost) {
+      state.role = 'host';
+      state.teamId = '';
+      localStorage.setItem('quiz_role', 'host');
+      localStorage.removeItem('quiz_teamId');
+      render();
+      return;
+    }
 
-  const teamsRef = ref(db, `rooms/${roomCode}/teams`);
-  try {
+    state.role = 'player';
+    localStorage.setItem('quiz_role', 'player');
+
+    const teamsRef = ref(db, `rooms/${roomCode}/teams`);
     const existingTeams = (await get(teamsRef)).val() || {};
     const found = Object.entries(existingTeams).find(([, team]) => team.clientId === state.clientId);
+
     if (found) {
       state.teamId = found[0];
-      if (found[1]?.name !== teamName) {
+      const currentName = sanitizeName(found[1]?.name || '');
+      if (teamName && currentName !== teamName) {
         await update(ref(db, `rooms/${roomCode}/teams/${state.teamId}`), { name: teamName });
       }
     } else {
@@ -202,19 +167,19 @@ async function joinOrCreateRoom() {
         joinedAt: Date.now()
       });
     }
-  } catch (error) {
-    console.error('Join team failed:', error);
-    alert('Nepodařilo se zapsat tým do databáze.');
-    render();
-    return;
-  }
 
-  localStorage.setItem('quiz_teamId', state.teamId);
-  render();
+    localStorage.setItem('quiz_teamId', state.teamId);
+    render();
+  } catch (err) {
+    console.error('joinOrCreateRoom error:', err);
+    alert('Nepodařilo se připojit k místnosti. Zkus stránku obnovit a znovu.');
+    render();
+  } finally {
+    els.joinBtn.disabled = false;
+  }
 }
 
 function subscribeRoom(roomCode) {
-  if (!state.authReady) return;
   if (state.unsubscribe) state.unsubscribe();
   const roomRef = ref(db, `rooms/${roomCode}`);
   const callback = snapshot => {
@@ -224,17 +189,14 @@ function subscribeRoom(roomCode) {
       alert('Místnost už neexistuje.');
       return;
     }
-    if (state.roomData.hostClientId === state.clientId) {
+    const hostId = state.roomData.hostClientId;
+    if (hostId === state.clientId) {
       state.role = 'host';
       localStorage.setItem('quiz_role', 'host');
     }
     render();
   };
-  onValue(roomRef, callback, error => {
-    console.error('Room subscription failed:', error);
-    state.authError = readableError(error);
-    render();
-  });
+  onValue(roomRef, callback);
   state.unsubscribe = () => off(roomRef, 'value', callback);
 }
 
@@ -245,27 +207,9 @@ function showOnly(viewId) {
   if (els[viewId]) els[viewId].classList.remove('hidden');
 }
 
-function setLoading(message = 'Načítání…') {
-  showOnly('loadingView');
-  const title = els.loadingView.querySelector('h2');
-  if (title) title.textContent = message;
-}
-
 function render() {
   els.localRole.textContent = roleLabel();
   els.roomInfo.textContent = `Místnost: ${state.roomCode || '—'}`;
-  if (joinHintEl) joinHintEl.textContent = defaultJoinHint;
-
-  if (state.authError) {
-    showOnly('joinView');
-    if (joinHintEl) joinHintEl.textContent = `Chyba Firebase: ${state.authError}`;
-    return;
-  }
-
-  if (!state.authReady) {
-    setLoading('Přihlašování do Firebase…');
-    return;
-  }
 
   if (!state.roomData) {
     showOnly('joinView');
@@ -282,14 +226,14 @@ function render() {
 function roleLabel() {
   if (state.role === 'host') return 'Host';
   if (state.role === 'player') return 'Tým';
-  return state.authReady ? 'Nepřipojeno' : 'Přihlašování';
+  return 'Nepřipojeno';
 }
 
 function renderHost() {
   const room = state.roomData;
   const teams = room.teams || {};
-  const pending = Object.entries(teams).filter(([, t]) => t.status === 'pending');
-  const accepted = Object.entries(teams).filter(([, t]) => t.status === 'accepted');
+  const pending = Object.entries(teams).filter(([,t]) => t.status === 'pending');
+  const accepted = Object.entries(teams).filter(([,t]) => t.status === 'accepted');
 
   els.hostRoomCode.textContent = state.roomCode;
   els.hostState.textContent = room.status;
@@ -324,7 +268,7 @@ function renderPendingList(pending) {
     els.pendingTeams.innerHTML = '<div class="empty">Nikdo momentálně nečeká.</div>';
     return;
   }
-  for (const [teamId, team] of pending.sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))) {
+  for (const [teamId, team] of pending.sort((a,b)=>(a[1].joinedAt||0)-(b[1].joinedAt||0))) {
     const row = document.createElement('div');
     row.className = 'teamRow';
     row.innerHTML = `
@@ -350,7 +294,7 @@ function renderAcceptedList(accepted) {
     els.acceptedTeams.innerHTML = '<div class="empty">Zatím nebyl přijat žádný tým.</div>';
     return;
   }
-  for (const [, team] of accepted.sort((a, b) => (b[1].score || 0) - (a[1].score || 0) || (a[1].joinedAt || 0) - (b[1].joinedAt || 0))) {
+  for (const [, team] of accepted.sort((a,b)=>(b[1].score||0)-(a[1].score||0) || (a[1].joinedAt||0)-(b[1].joinedAt||0))) {
     const row = document.createElement('div');
     row.className = 'teamRow';
     row.innerHTML = `
@@ -405,7 +349,6 @@ function renderPlayer() {
       els.submitAnswerBtn.disabled = true;
       els.submitState.textContent = `Odpověď už byla odeslána za ${formatElapsed(answer.elapsedMs)}.`;
     } else {
-      els.answerInput.value = '';
       els.answerInput.disabled = false;
       els.submitAnswerBtn.disabled = false;
       els.submitState.textContent = 'Odpověď můžete odeslat jen jednou za kolo.';
@@ -429,11 +372,11 @@ function currentAnswer() {
   const room = state.roomData;
   if (!room || !state.teamId) return null;
   const round = room.currentRound;
-  return room.rounds?.[round]?.[state.teamId] || null;
+  const data = room.rounds?.[round]?.[state.teamId];
+  return data || null;
 }
 
 async function startGame() {
-  if (!ensureAuthReady()) return;
   const accepted = Object.values(state.roomData?.teams || {}).filter(t => t.status === 'accepted');
   if (!accepted.length) {
     alert('Nejdřív přijmi alespoň jeden tým.');
@@ -450,7 +393,6 @@ async function startGame() {
 }
 
 async function stopRound() {
-  if (!ensureAuthReady()) return;
   await update(ref(db, `rooms/${state.roomCode}`), {
     status: 'round_stopped',
     roundStoppedAt: Date.now(),
@@ -459,7 +401,6 @@ async function stopRound() {
 }
 
 async function nextRound() {
-  if (!ensureAuthReady()) return;
   els.answerInput.value = '';
   await update(ref(db, `rooms/${state.roomCode}`), {
     status: 'round_active',
@@ -471,7 +412,6 @@ async function nextRound() {
 }
 
 async function endGame() {
-  if (!ensureAuthReady()) return;
   await update(ref(db, `rooms/${state.roomCode}`), {
     status: 'finished',
     roundStoppedAt: Date.now(),
@@ -480,7 +420,6 @@ async function endGame() {
 }
 
 async function submitAnswer() {
-  if (!ensureAuthReady()) return;
   const room = state.roomData;
   const myTeam = getMyTeam();
   if (!room || !myTeam || myTeam.status !== 'accepted' || room.status !== 'round_active') return;
@@ -514,10 +453,10 @@ function renderAnswers() {
     answer: val.answer || '',
     elapsedMs: val.elapsedMs ?? 999999999,
     submittedAt: val.submittedAt || 0
-  })).sort((a, b) => (a.elapsedMs - b.elapsedMs) || (a.submittedAt - b.submittedAt));
+  })).sort((a,b) => (a.elapsedMs - b.elapsedMs) || (a.submittedAt - b.submittedAt));
 
   const missing = Object.entries(teams)
-    .filter(([, t]) => t.status === 'accepted')
+    .filter(([,t]) => t.status === 'accepted')
     .filter(([teamId]) => !answers.some(a => a.teamId === teamId))
     .map(([teamId, t]) => ({ teamId, name: t.name, score: t.score || 0, answer: 'Neodesláno', elapsedMs: null }));
 
@@ -532,7 +471,7 @@ function renderAnswers() {
     const row = document.createElement('div');
     row.className = 'answerRow';
     row.innerHTML = `
-      <div class="scoreBox">${item.score}</div>
+      <div class="scoreBox" id="score-${item.teamId}">${item.score}</div>
       <div class="answerMain">
         <div class="answerTitle">${escapeHtml(item.name)}</div>
         <div class="answerText">${escapeHtml(item.answer)}</div>
@@ -557,10 +496,11 @@ async function adjustScore(teamId, delta) {
 }
 
 function finalRankingData() {
-  return Object.entries(state.roomData?.teams || {})
-    .filter(([, t]) => t.status === 'accepted')
+  const teams = Object.entries(state.roomData?.teams || {})
+    .filter(([,t]) => t.status === 'accepted')
     .map(([teamId, t]) => ({ teamId, name: t.name || 'Bez názvu', score: t.score || 0, joinedAt: t.joinedAt || 0 }))
-    .sort((a, b) => (b.score - a.score) || (a.joinedAt - b.joinedAt));
+    .sort((a,b) => (b.score - a.score) || (a.joinedAt - b.joinedAt));
+  return teams;
 }
 
 function renderFinalRanking() {
@@ -604,16 +544,6 @@ function escapeHtml(text) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
-}
-
-function ensureAuthReady() {
-  if (state.authReady && auth.currentUser) return true;
-  alert('Firebase ještě není přihlášený. Obnov stránku a zkus to znovu.');
-  return false;
-}
-
-function readableError(error) {
-  return error?.code || error?.message || 'neznámá chyba';
 }
 
 function resetLocalState(reload = true) {

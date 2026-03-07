@@ -106,29 +106,28 @@ async function joinOrCreateRoom() {
   els.joinBtn.disabled = true;
 
   try {
-    const roomRef = ref(db, `rooms/${roomCode}`);
-    const tx = await runTransaction(roomRef, current => {
-      if (current === null) {
-        return {
-          code: roomCode,
-          createdAt: Date.now(),
-          hostClientId: state.clientId,
-          hostName: teamName,
-          status: 'lobby',
-          currentRound: 0,
-          lastActionAt: Date.now(),
-          teams: {}
-        };
-      }
-      return current;
-    }, { applyLocally: false });
+    const hostRef = ref(db, `rooms/${roomCode}/hostClientId`);
+    const tx = await runTransaction(hostRef, current => current === null ? state.clientId : current);
 
     if (!tx.snapshot.exists()) {
-      throw new Error('Nepodařilo se vytvořit nebo načíst místnost.');
+      throw new Error('Host místnosti nebyl vytvořen.');
     }
 
-    const roomData = tx.snapshot.val();
-    const isHost = roomData?.hostClientId === state.clientId;
+    const hostClientId = tx.snapshot.val();
+    const isHost = hostClientId === state.clientId;
+    const roomRef = ref(db, `rooms/${roomCode}`);
+
+    if (isHost) {
+      await update(roomRef, {
+        code: roomCode,
+        createdAt: Date.now(),
+        hostClientId: state.clientId,
+        hostName: teamName,
+        status: 'lobby',
+        currentRound: 0,
+        lastActionAt: Date.now()
+      });
+    }
 
     state.roomCode = roomCode;
     localStorage.setItem('quiz_roomCode', roomCode);
@@ -149,11 +148,9 @@ async function joinOrCreateRoom() {
     const teamsRef = ref(db, `rooms/${roomCode}/teams`);
     const existingTeams = (await get(teamsRef)).val() || {};
     const found = Object.entries(existingTeams).find(([, team]) => team.clientId === state.clientId);
-
     if (found) {
       state.teamId = found[0];
-      const currentName = sanitizeName(found[1]?.name || '');
-      if (teamName && currentName !== teamName) {
+      if (teamName && found[1]?.name !== teamName) {
         await update(ref(db, `rooms/${roomCode}/teams/${state.teamId}`), { name: teamName });
       }
     } else {
@@ -167,7 +164,6 @@ async function joinOrCreateRoom() {
         joinedAt: Date.now()
       });
     }
-
     localStorage.setItem('quiz_teamId', state.teamId);
     render();
   } catch (err) {

@@ -93,9 +93,26 @@ function sanitizeName(value) {
 }
 
 function readSeconds(inputEl) {
-  const raw = Number((inputEl?.value || '').toString().replace(',', '.'));
-  if (!Number.isFinite(raw) || raw <= 0) return null;
-  return Math.max(1, Math.round(raw));
+  const raw = (inputEl?.value || '').toString().trim();
+  if (!raw) return null;
+
+  const norm = raw.replace(/\s+/g, '').replace(',', '.');
+  if (/^\d+$/.test(norm)) {
+    const sec = Number(norm);
+    return Number.isFinite(sec) && sec > 0 ? Math.round(sec) : null;
+  }
+
+  const mmss = norm.match(/^(\d{1,3}):(\d{1,2})$/);
+  if (mmss) {
+    const minutes = Number(mmss[1]);
+    const seconds = Number(mmss[2]);
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds > 59) return null;
+    return minutes * 60 + seconds;
+  }
+
+  const num = Number(norm);
+  if (!Number.isFinite(num) || num <= 0) return null;
+  return Math.round(num);
 }
 
 function bootAuth() {
@@ -270,6 +287,7 @@ function subscribeRoom(roomCode) {
       state.role = 'host';
       localStorage.setItem('quiz_role', 'host');
       localStorage.removeItem('quiz_teamId');
+      if (state.roomData.status === 'round_active') maybeAutoStopRound();
     } else if (state.teamId) {
       state.role = 'player';
       localStorage.setItem('quiz_role', 'player');
@@ -487,6 +505,11 @@ async function startRound(limitSec = null) {
     return;
   }
 
+  if (limitSec !== null && (!Number.isFinite(limitSec) || limitSec <= 0)) {
+    alert('Zadej čas kola. Můžeš napsat třeba 90 nebo 2:30.');
+    return;
+  }
+
   const nextRound = (state.roomData.currentRound || 0) + 1;
   const startedAt = Date.now();
   const patch = {
@@ -494,29 +517,48 @@ async function startRound(limitSec = null) {
     currentRound: nextRound,
     roundStartedAt: startedAt,
     roundStoppedAt: null,
+    roundStopReason: null,
     roundTimeLimitSec: limitSec || null,
     roundDeadlineAt: limitSec ? startedAt + limitSec * 1000 : null,
+    roundExpectedAnswers: accepted.length,
     lastActionAt: startedAt
   };
 
-  await update(ref(db, `rooms/${state.roomCode}`), patch);
+  try {
+    await update(ref(db, `rooms/${state.roomCode}`), patch);
+  } catch (error) {
+    console.error('Start round failed:', error);
+    alert('Kolo se nepodařilo spustit.');
+  }
 }
 
 async function stopRound(reason = 'manual') {
   if (!ensureAuthReady() || state.stoppingRound) return;
+  if (!state.roomData || state.roomData.status !== 'round_active') return;
+
   state.stoppingRound = true;
+  const now = Date.now();
   try {
-    await runTransaction(ref(db, `rooms/${state.roomCode}`), current => {
-      if (!current || current.status !== 'round_active') return current;
-      current.status = 'round_stopped';
-      current.roundStoppedAt = Date.now();
-      current.roundStopReason = reason;
-      current.lastActionAt = Date.now();
-      return current;
-    }, { applyLocally: false });
+    await update(ref(db, `rooms/${state.roomCode}`), {
+      status: 'round_stopped',
+      roundStoppedAt: now,
+      roundStopReason: reason,
+      roundDeadlineAt: null,
+      lastActionAt: now
+    });
+  } catch (error) {
+    console.error('Stop round failed:', error);
+    alert('Kolo se nepodařilo ukončit.');
   } finally {
-    setTimeout(() => { state.stoppingRound = false; }, 250);
+    setTimeout(() => { state.stoppingRound = false; }, 300);
   }
+}
+
+function formatCountdown(totalSeconds) {
+  const sec = Math.max(0, Math.ceil(totalSeconds));
+  const minutes = Math.floor(sec / 60);
+  const seconds = sec % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function syncHostCountdown() {
@@ -530,8 +572,8 @@ function syncHostCountdown() {
 
   const tick = () => {
     const leftMs = Math.max(0, deadline - Date.now());
-    const sec = Math.ceil(leftMs / 1000);
-    els.countdown.textContent = String(sec).padStart(2, '0');
+    const sec = leftMs / 1000;
+    els.countdown.textContent = formatCountdown(sec);
     if (leftMs <= 0) stopRound('timer');
   };
 
@@ -551,6 +593,12 @@ function clearCountdownTicker() {
 function maybeAutoStopRound() {
   const room = state.roomData;
   if (!room || room.status !== 'round_active') return;
+
+  if (room.roundDeadlineAt && Date.now() >= Number(room.roundDeadlineAt)) {
+    stopRound('timer');
+    return;
+  }
+
   const acceptedIds = Object.entries(room.teams || {})
     .filter(([, team]) => team.status === 'accepted')
     .map(([teamId]) => teamId);
@@ -594,14 +642,26 @@ async function submitAnswer() {
   if (existing.exists()) return;
 
   const now = Date.now();
-  await set(answerRef, {
-    teamId: state.teamId,
-    teamUid: state.authUid,
-    teamName: myTeam.name,
-    answer,
-    submittedAt: now,
-    elapsedMs: Math.max(0, now - (room.roundStartedAt || now))
-  });
+  try {
+    await set(answerRef, {
+      teamId: state.teamId,
+      teamUid: state.authUid,
+      teamName: myTeam.name,
+      answer,
+      submittedAt: now,
+      elapsedMs: Math.max(0, now - (room.roundStartedAt || now))
+    });
+  } catch (error) {
+    console.error('Submit answer failed:', error);
+    alert('Odpověď se nepodařilo odeslat.');
+    return;
+  }
+
+  els.answerInput.disabled = true;
+  els.submitAnswerBtn.disabled = true;
+  els.submitState.textContent = 'Odpověď odeslána.';
+
+  if (state.role === 'host') maybeAutoStopRound();
 }
 
 function renderAnswers() {

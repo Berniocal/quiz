@@ -1,4 +1,4 @@
-const CACHE = 'tymy-odpovedi-v7';
+const CACHE = 'tymy-odpovedi-v2';
 const ASSETS = [
   './',
   './index.html',

@@ -71,3 +71,15 @@ button:disabled{opacity:.55;cursor:not-allowed}
   .pmBox{justify-content:flex-start}
   .bigText{font-size:26px}
 }
+
+.hostCodeBar{
+  margin:0 0 16px;
+  padding:10px 14px;
+  border-radius:14px;
+  background:#0a1224;
+  border:1px solid var(--line);
+  color:var(--text);
+  font-weight:800;
+  text-align:center;
+  letter-spacing:.04em;
+}

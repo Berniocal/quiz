@@ -26,7 +26,7 @@ const els = {
   hostFinalView: $('hostFinalView'), playerWaitingView: $('playerWaitingView'), playerReadyView: $('playerReadyView'),
   playerRoundView: $('playerRoundView'), playerHoldView: $('playerHoldView'), playerRejectedView: $('playerRejectedView'), loadingView: $('loadingView'),
   teamName: $('teamName'), roomCode: $('roomCode'), joinBtn: $('joinBtn'), randomBtn: $('randomBtn'), localRole: $('localRole'), roomInfo: $('roomInfo'),
-  pendingTeams: $('pendingTeams'), acceptedTeams: $('acceptedTeams'), startGameBtn: $('startGameBtn'), stopRoundBtn: $('stopRoundBtn'),
+  pendingTeams: $('pendingTeams'), acceptedTeams: $('acceptedTeams'), startGameBtn: $('startGameBtn'), stopRoundBtn: $('stopRoundBtn'), hostCodeBars: document.querySelectorAll('.hostCodeBar'),
   answersList: $('answersList'), nextRoundBtn: $('nextRoundBtn'), endGameBtn: $('endGameBtn'), finalRanking: $('finalRanking'),
   newRoomBtn: $('newRoomBtn'), waitingText: $('waitingText'), answerInput: $('answerInput'), submitAnswerBtn: $('submitAnswerBtn'),
   submitState: $('submitState')
@@ -56,6 +56,8 @@ els.startGameBtn.addEventListener('click', startGame);
 els.stopRoundBtn.addEventListener('click', stopRound);
 els.nextRoundBtn.addEventListener('click', nextRound);
 els.endGameBtn.addEventListener('click', endGame);
+const endGameBtnResults = document.getElementById('endGameBtnResults');
+if (endGameBtnResults) endGameBtnResults.addEventListener('click', endGame);
 els.newRoomBtn.addEventListener('click', () => resetLocalState(true));
 els.submitAnswerBtn.addEventListener('click', submitAnswer);
 
@@ -123,10 +125,24 @@ async function joinOrCreateRoom() {
   setLoading('Připojování k místnosti…');
 
   const roomRef = ref(db, `rooms/${roomCode}`);
-  let tx;
+  let roomData = null;
+
   try {
-    tx = await runTransaction(roomRef, current => {
-      if (current === null) {
+    const roomSnap = await get(roomRef);
+    roomData = roomSnap.val();
+  } catch (error) {
+    console.error('Room read failed:', error);
+    state.authError = readableError(error);
+    alert('Nepodařilo se připojit k místnosti. Zkus stránku obnovit a znovu.');
+    render();
+    return;
+  }
+
+  if (!roomData) {
+    let tx;
+    try {
+      tx = await runTransaction(roomRef, current => {
+        if (current !== null) return current;
         return {
           code: roomCode,
           createdAt: Date.now(),
@@ -141,24 +157,23 @@ async function joinOrCreateRoom() {
           teams: {},
           rounds: {}
         };
-      }
-      return current;
-    }, { applyLocally: false });
-  } catch (error) {
-    console.error('Transaction failed:', error);
-    state.authError = readableError(error);
-    alert('Nepodařilo se připojit k místnosti. Zkus stránku obnovit a znovu.');
-    render();
-    return;
+      }, { applyLocally: false });
+    } catch (error) {
+      console.error('Transaction failed:', error);
+      state.authError = readableError(error);
+      alert('Nepodařilo se připojit k místnosti. Zkus stránku obnovit a znovu.');
+      render();
+      return;
+    }
+
+    if (!tx.committed || !tx.snapshot.exists()) {
+      alert('Nepodařilo se vytvořit nebo načíst místnost.');
+      render();
+      return;
+    }
+    roomData = tx.snapshot.val() || {};
   }
 
-  if (!tx.committed || !tx.snapshot.exists()) {
-    alert('Nepodařilo se vytvořit nebo načíst místnost.');
-    render();
-    return;
-  }
-
-  const roomData = tx.snapshot.val() || {};
   const iAmHost = roomData.hostClientId === state.clientId;
 
   state.roomCode = roomCode;
@@ -202,7 +217,7 @@ async function joinOrCreateRoom() {
   } catch (error) {
     console.error('Join team failed:', error);
     state.authError = readableError(error);
-    alert('Nepodařilo se zapsat tým do databáze.');
+    alert('Nepodařilo se připojit k místnosti. Zkus stránku obnovit a znovu.');
     render();
     return;
   }
@@ -263,13 +278,14 @@ function showOnly(viewId) {
 
 function setLoading(message = 'Načítání…') {
   showOnly('loadingView');
-  const title = els.loadingView.querySelector('h2');
+  const title = els.loadingView.querySelector('h2, div');
   if (title) title.textContent = message;
 }
 
 function render() {
   els.localRole.textContent = roleLabel();
   els.roomInfo.textContent = `Místnost: ${state.roomCode || '—'}`;
+  els.hostCodeBars.forEach(el => { el.textContent = state.roomCode ? `Kód místnosti: ${state.roomCode}` : 'Kód místnosti: —'; });
   if (joinHintEl) joinHintEl.textContent = defaultJoinHint;
 
   if (state.finishedSnapshot && !state.roomData && state.role !== 'player') {

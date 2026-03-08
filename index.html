@@ -10,12 +10,7 @@
 </head>
 <body>
   <div class="app">
-    <header class="hero card">
-      <h1>Týmy – odpovědi na čas</h1>
-      <p>Host vytvoří místnost, schválí týmy a řídí kola. Ostatní telefony jen odesílají odpověď.</p>
-    </header>
-
-    <section id="joinView" class="card">
+<section id="joinView" class="card">
       <div class="grid2">
         <div>
           <label for="teamName">Jméno týmu</label>
@@ -38,24 +33,28 @@
     </section>
 
     <section id="hostLobbyView" class="card hidden cleanView">
+      <div class="hostCodeBar"></div>
       <div id="pendingTeams" class="list"></div>
       <div id="acceptedTeams" class="list compactList"></div>
       <div class="actions cleanActions">
         <button id="startGameBtn">Začít hru</button>
+        <button id="endGameBtn" class="secondary">Ukončit hru</button>
       </div>
     </section>
 
     <section id="hostRoundView" class="card hidden cleanView centerView">
+      <div class="hostCodeBar"></div>
       <div class="actions cleanActions singleAction">
         <button id="stopRoundBtn" class="danger bigBtn">Skončit kolo</button>
       </div>
     </section>
 
     <section id="hostResultsView" class="card hidden cleanView">
+      <div class="hostCodeBar"></div>
       <div id="answersList" class="answers tableAnswers"></div>
       <div class="actions cleanActions">
         <button id="nextRoundBtn">Další kolo</button>
-        <button id="endGameBtn" class="secondary">Konec hry</button>
+        <button id="endGameBtnResults" class="secondary">Ukončit hru</button>
       </div>
     </section>
 
@@ -92,7 +91,7 @@
     </section>
 
     <section id="loadingView" class="card hidden cleanView centerTextOnly">
-      <h2>Načítání…</h2>
+      <div>Načítání…</div>
     </section>
   </div>
 

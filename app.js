@@ -1,20 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
-import {
-  getAuth,
-  signInAnonymously,
-  onAuthStateChanged
-} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
-import {
-  getDatabase,
-  ref,
-  onValue,
-  get,
-  set,
-  update,
-  push,
-  runTransaction,
-  off
-} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
+import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import { getDatabase, ref, onValue, get, set, update, push, runTransaction, remove, off } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-database.js';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyA-Y_qYftzPYHh9hCXUM7bMqK7j5pMVbzc',
@@ -40,13 +26,10 @@ const els = {
   hostFinalView: $('hostFinalView'), playerWaitingView: $('playerWaitingView'), playerReadyView: $('playerReadyView'),
   playerRoundView: $('playerRoundView'), playerHoldView: $('playerHoldView'), playerRejectedView: $('playerRejectedView'), loadingView: $('loadingView'),
   teamName: $('teamName'), roomCode: $('roomCode'), joinBtn: $('joinBtn'), randomBtn: $('randomBtn'), localRole: $('localRole'), roomInfo: $('roomInfo'),
-  hostRoomCode: $('hostRoomCode'), hostState: $('hostState'), hostRound: $('hostRound'), pendingTeams: $('pendingTeams'), acceptedTeams: $('acceptedTeams'),
-  startGameBtn: $('startGameBtn'), roundRoomCode: $('roundRoomCode'), roundNumber: $('roundNumber'), stopRoundBtn: $('stopRoundBtn'),
-  resultsRoomCode: $('resultsRoomCode'), resultsRoundNumber: $('resultsRoundNumber'), answersList: $('answersList'), nextRoundBtn: $('nextRoundBtn'),
-  endGameBtn: $('endGameBtn'), finalRanking: $('finalRanking'), newRoomBtn: $('newRoomBtn'), waitingText: $('waitingText'),
-  playerTeamLabel: $('playerTeamLabel'), playerScoreLabel: $('playerScoreLabel'), playerRoundTeamLabel: $('playerRoundTeamLabel'),
-  playerRoundNumber: $('playerRoundNumber'), answerInput: $('answerInput'), submitAnswerBtn: $('submitAnswerBtn'), submitState: $('submitState'),
-  playerHoldTeamLabel: $('playerHoldTeamLabel'), playerHoldScoreLabel: $('playerHoldScoreLabel')
+  pendingTeams: $('pendingTeams'), acceptedTeams: $('acceptedTeams'), startGameBtn: $('startGameBtn'), stopRoundBtn: $('stopRoundBtn'),
+  answersList: $('answersList'), nextRoundBtn: $('nextRoundBtn'), endGameBtn: $('endGameBtn'), finalRanking: $('finalRanking'),
+  newRoomBtn: $('newRoomBtn'), waitingText: $('waitingText'), answerInput: $('answerInput'), submitAnswerBtn: $('submitAnswerBtn'),
+  submitState: $('submitState')
 };
 
 const joinHintEl = document.querySelector('#joinView .hint');
@@ -61,20 +44,19 @@ const state = {
   roomData: null,
   authReady: false,
   authUid: '',
-  authError: ''
+  authError: '',
+  finishedSnapshot: null
 };
 
 if (state.roomCode) els.roomCode.value = state.roomCode;
 
-els.randomBtn.addEventListener('click', () => {
-  els.roomCode.value = randomCode();
-});
+els.randomBtn.addEventListener('click', () => { els.roomCode.value = randomCode(); });
 els.joinBtn.addEventListener('click', joinOrCreateRoom);
 els.startGameBtn.addEventListener('click', startGame);
 els.stopRoundBtn.addEventListener('click', stopRound);
 els.nextRoundBtn.addEventListener('click', nextRound);
 els.endGameBtn.addEventListener('click', endGame);
-els.newRoomBtn.addEventListener('click', resetLocalState);
+els.newRoomBtn.addEventListener('click', () => resetLocalState(true));
 els.submitAnswerBtn.addEventListener('click', submitAnswer);
 
 bootAuth();
@@ -123,7 +105,7 @@ async function joinOrCreateRoom() {
 
   const roomCode = sanitizeCode(els.roomCode.value);
   const teamName = sanitizeName(els.teamName.value);
-  if (!roomCode || roomCode.length !== 5) {
+  if (roomCode.length !== 5) {
     alert('Zadej pětimístný kód místnosti.');
     return;
   }
@@ -132,15 +114,15 @@ async function joinOrCreateRoom() {
     return;
   }
 
+  state.finishedSnapshot = null;
   state.authError = '';
   state.role = '';
   state.teamId = '';
   localStorage.removeItem('quiz_teamId');
   localStorage.removeItem('quiz_role');
-
   setLoading('Připojování k místnosti…');
-  const roomRef = ref(db, `rooms/${roomCode}`);
 
+  const roomRef = ref(db, `rooms/${roomCode}`);
   let tx;
   try {
     tx = await runTransaction(roomRef, current => {
@@ -149,12 +131,15 @@ async function joinOrCreateRoom() {
           code: roomCode,
           createdAt: Date.now(),
           hostClientId: state.clientId,
-          hostUid: state.authUid || '',
+          hostUid: state.authUid,
           hostName: teamName,
           status: 'lobby',
           currentRound: 0,
+          roundStartedAt: null,
+          roundStoppedAt: null,
           lastActionAt: Date.now(),
-          teams: {}
+          teams: {},
+          rounds: {}
         };
       }
       return current;
@@ -182,9 +167,7 @@ async function joinOrCreateRoom() {
 
   if (iAmHost) {
     state.role = 'host';
-    state.teamId = '';
     localStorage.setItem('quiz_role', 'host');
-    localStorage.removeItem('quiz_teamId');
     render();
     return;
   }
@@ -196,20 +179,19 @@ async function joinOrCreateRoom() {
   try {
     const existingTeams = (await get(teamsRef)).val() || {};
     const found = Object.entries(existingTeams).find(([, team]) => team && team.clientId === state.clientId);
+
     if (found) {
       state.teamId = found[0];
-      const patch = {};
-      if (found[1]?.name !== teamName) patch.name = teamName;
+      const patch = { uid: state.authUid, lastJoinAt: Date.now() };
+      if ((found[1]?.name || '') !== teamName) patch.name = teamName;
       if (found[1]?.status === 'rejected') patch.status = 'pending';
-      if (Object.keys(patch).length) {
-        patch.lastJoinAt = Date.now();
-        await update(ref(db, `rooms/${roomCode}/teams/${state.teamId}`), patch);
-      }
+      await update(ref(db, `rooms/${roomCode}/teams/${state.teamId}`), patch);
     } else {
       const newTeamRef = push(teamsRef);
       state.teamId = newTeamRef.key;
       await set(newTeamRef, {
         clientId: state.clientId,
+        uid: state.authUid,
         name: teamName,
         status: 'pending',
         score: 0,
@@ -232,14 +214,26 @@ async function joinOrCreateRoom() {
 function subscribeRoom(roomCode) {
   if (!state.authReady) return;
   if (state.unsubscribe) state.unsubscribe();
+
   const roomRef = ref(db, `rooms/${roomCode}`);
   const callback = snapshot => {
     state.roomData = snapshot.val();
+
     if (!state.roomData) {
+      const finishedData = state.finishedSnapshot;
+      const wasHost = state.role === 'host';
       resetLocalState(false);
-      alert('Místnost už neexistuje.');
+      if (finishedData && wasHost) {
+        state.finishedSnapshot = finishedData;
+        showOnly('hostFinalView');
+        renderFinalRanking(finishedData);
+      } else {
+        render();
+        alert('Hra skončila. Místnost byla smazána.');
+      }
       return;
     }
+
     if (state.roomData.hostClientId === state.clientId) {
       state.role = 'host';
       localStorage.setItem('quiz_role', 'host');
@@ -250,11 +244,13 @@ function subscribeRoom(roomCode) {
     }
     render();
   };
+
   onValue(roomRef, callback, error => {
     console.error('Room subscription failed:', error);
     state.authError = readableError(error);
     render();
   });
+
   state.unsubscribe = () => off(roomRef, 'value', callback);
 }
 
@@ -276,6 +272,12 @@ function render() {
   els.roomInfo.textContent = `Místnost: ${state.roomCode || '—'}`;
   if (joinHintEl) joinHintEl.textContent = defaultJoinHint;
 
+  if (state.finishedSnapshot && !state.roomData && state.role !== 'player') {
+    showOnly('hostFinalView');
+    renderFinalRanking(state.finishedSnapshot);
+    return;
+  }
+
   if (state.authError) {
     showOnly('joinView');
     if (joinHintEl) joinHintEl.textContent = `Chyba Firebase: ${state.authError}`;
@@ -292,8 +294,8 @@ function render() {
     return;
   }
 
-  const roomHostClientId = state.roomData?.hostClientId || '';
-  if (roomHostClientId && roomHostClientId === state.clientId) {
+  const roomHostClientId = state.roomData.hostClientId || '';
+  if (roomHostClientId === state.clientId) {
     state.role = 'host';
     localStorage.setItem('quiz_role', 'host');
   } else if (state.teamId) {
@@ -301,11 +303,8 @@ function render() {
     localStorage.setItem('quiz_role', 'player');
   }
 
-  if (state.role === 'host') {
-    renderHost();
-  } else {
-    renderPlayer();
-  }
+  if (state.role === 'host') renderHost();
+  else renderPlayer();
 }
 
 function roleLabel() {
@@ -320,14 +319,6 @@ function renderHost() {
   const pending = Object.entries(teams).filter(([, t]) => t.status === 'pending');
   const accepted = Object.entries(teams).filter(([, t]) => t.status === 'accepted');
 
-  els.hostRoomCode.textContent = state.roomCode;
-  els.hostState.textContent = room.status;
-  els.hostRound.textContent = room.currentRound || 0;
-  els.roundRoomCode.textContent = state.roomCode;
-  els.roundNumber.textContent = room.currentRound || 1;
-  els.resultsRoomCode.textContent = state.roomCode;
-  els.resultsRoundNumber.textContent = room.currentRound || 1;
-
   renderPendingList(pending);
   renderAcceptedList(accepted);
 
@@ -341,7 +332,7 @@ function renderHost() {
     renderAnswers();
   } else if (room.status === 'finished') {
     showOnly('hostFinalView');
-    renderFinalRanking();
+    renderFinalRanking(room);
   } else {
     showOnly('hostLobbyView');
   }
@@ -353,41 +344,38 @@ function renderPendingList(pending) {
     els.pendingTeams.innerHTML = '<div class="empty">Nikdo momentálně nečeká.</div>';
     return;
   }
+
   for (const [teamId, team] of pending.sort((a, b) => (a[1].joinedAt || 0) - (b[1].joinedAt || 0))) {
     const row = document.createElement('div');
     row.className = 'teamRow';
     row.innerHTML = `
-      <div class="teamMeta">
-        <div class="teamName">${escapeHtml(team.name || 'Bez názvu')}</div>
-        <div class="teamSub">Čeká od ${formatClock(team.joinedAt)}</div>
-      </div>
+      <div class="teamName">${escapeHtml(team.name || 'Bez názvu')}</div>
       <div class="teamActions">
         <button data-team="${teamId}" data-action="accept">Přijmout</button>
         <button class="secondary" data-team="${teamId}" data-action="reject">Odmítnout</button>
       </div>`;
+
     row.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async e => {
       const action = e.currentTarget.dataset.action;
-      await update(ref(db, `rooms/${state.roomCode}/teams/${teamId}`), { status: action === 'accept' ? 'accepted' : 'rejected' });
+      await update(ref(db, `rooms/${state.roomCode}/teams/${teamId}`), {
+        status: action === 'accept' ? 'accepted' : 'rejected'
+      });
     }));
+
     els.pendingTeams.appendChild(row);
   }
 }
 
 function renderAcceptedList(accepted) {
   els.acceptedTeams.innerHTML = '';
-  if (!accepted.length) {
-    els.acceptedTeams.innerHTML = '<div class="empty">Zatím nebyl přijat žádný tým.</div>';
-    return;
-  }
+  if (!accepted.length) return;
+
   for (const [, team] of accepted.sort((a, b) => (b[1].score || 0) - (a[1].score || 0) || (a[1].joinedAt || 0) - (b[1].joinedAt || 0))) {
     const row = document.createElement('div');
-    row.className = 'teamRow';
+    row.className = 'teamRow acceptedRow';
     row.innerHTML = `
-      <div class="teamMeta">
-        <div class="teamName">${escapeHtml(team.name || 'Bez názvu')}</div>
-        <div class="teamSub">Body: ${team.score || 0}</div>
-      </div>
-      <div class="pill">Přijato</div>`;
+      <div class="acceptedName">${escapeHtml(team.name || 'Bez názvu')}</div>
+      <div class="acceptedScore">${team.score || 0}</div>`;
     els.acceptedTeams.appendChild(row);
   }
 }
@@ -405,16 +393,9 @@ function renderPlayer() {
     return;
   }
 
-  els.playerTeamLabel.textContent = myTeam.name || '—';
-  els.playerScoreLabel.textContent = myTeam.score || 0;
-  els.playerRoundTeamLabel.textContent = myTeam.name || '—';
-  els.playerRoundNumber.textContent = room.currentRound || 1;
-  els.playerHoldTeamLabel.textContent = myTeam.name || '—';
-  els.playerHoldScoreLabel.textContent = myTeam.score || 0;
-
   if (myTeam.status === 'pending') {
     showOnly('playerWaitingView');
-    els.waitingText.textContent = 'Host ještě nepotvrdil připojení tvého týmu.';
+    els.waitingText.textContent = 'Počkejte na zahájení soutěže.';
     return;
   }
   if (myTeam.status === 'rejected') {
@@ -432,23 +413,17 @@ function renderPlayer() {
       els.answerInput.value = answer.answer || '';
       els.answerInput.disabled = true;
       els.submitAnswerBtn.disabled = true;
-      els.submitState.textContent = `Odpověď už byla odeslána za ${formatElapsed(answer.elapsedMs)}.`;
+      els.submitState.textContent = 'Odpověď odeslána.';
     } else {
       els.answerInput.value = '';
       els.answerInput.disabled = false;
       els.submitAnswerBtn.disabled = false;
-      els.submitState.textContent = 'Odpověď můžete odeslat jen jednou za kolo.';
+      els.submitState.textContent = '';
     }
     return;
   }
-  if (room.status === 'round_stopped') {
+  if (room.status === 'round_stopped' || room.status === 'finished') {
     showOnly('playerHoldView');
-    return;
-  }
-  if (room.status === 'finished') {
-    showOnly('playerHoldView');
-    const rank = finalRankingData().findIndex(item => item.teamId === state.teamId) + 1;
-    els.playerHoldScoreLabel.textContent = `${myTeam.score || 0} (pořadí ${rank || '—'})`;
     return;
   }
   showOnly('playerReadyView');
@@ -457,8 +432,7 @@ function renderPlayer() {
 function currentAnswer() {
   const room = state.roomData;
   if (!room || !state.teamId) return null;
-  const round = room.currentRound;
-  return room.rounds?.[round]?.[state.teamId] || null;
+  return room.rounds?.[room.currentRound]?.[state.teamId] || null;
 }
 
 async function startGame() {
@@ -468,10 +442,9 @@ async function startGame() {
     alert('Nejdřív přijmi alespoň jeden tým.');
     return;
   }
-  const nextRoundNumber = (state.roomData.currentRound || 0) + 1;
   await update(ref(db, `rooms/${state.roomCode}`), {
     status: 'round_active',
-    currentRound: nextRoundNumber,
+    currentRound: (state.roomData.currentRound || 0) + 1,
     roundStartedAt: Date.now(),
     roundStoppedAt: null,
     lastActionAt: Date.now()
@@ -501,11 +474,18 @@ async function nextRound() {
 
 async function endGame() {
   if (!ensureAuthReady()) return;
-  await update(ref(db, `rooms/${state.roomCode}`), {
-    status: 'finished',
-    roundStoppedAt: Date.now(),
-    lastActionAt: Date.now()
-  });
+  const finalRoom = structuredClone(state.roomData || {});
+  finalRoom.status = 'finished';
+  state.finishedSnapshot = finalRoom;
+  showOnly('hostFinalView');
+  renderFinalRanking(finalRoom);
+
+  try {
+    await remove(ref(db, `rooms/${state.roomCode}`));
+  } catch (error) {
+    console.error('Failed to delete room:', error);
+    alert('Nepodařilo se smazat místnost ve Firebase.');
+  }
 }
 
 async function submitAnswer() {
@@ -513,22 +493,25 @@ async function submitAnswer() {
   const room = state.roomData;
   const myTeam = getMyTeam();
   if (!room || !myTeam || myTeam.status !== 'accepted' || room.status !== 'round_active') return;
+
   const answer = els.answerInput.value.trim().slice(0, 300);
   if (!answer) {
     alert('Napište odpověď.');
     return;
   }
+
   const answerRef = ref(db, `rooms/${state.roomCode}/rounds/${room.currentRound}/${state.teamId}`);
   const existing = await get(answerRef);
   if (existing.exists()) return;
+
   const now = Date.now();
-  const elapsedMs = Math.max(0, now - (room.roundStartedAt || now));
   await set(answerRef, {
     teamId: state.teamId,
+    teamUid: state.authUid,
     teamName: myTeam.name,
     answer,
     submittedAt: now,
-    elapsedMs
+    elapsedMs: Math.max(0, now - (room.roundStartedAt || now))
   });
 }
 
@@ -557,16 +540,18 @@ function renderAnswers() {
     return;
   }
 
+  const header = document.createElement('div');
+  header.className = 'tableHeader';
+  header.innerHTML = '<div>Tým</div><div>Odpověď</div><div>Body</div><div></div>';
+  els.answersList.appendChild(header);
+
   for (const item of all) {
     const row = document.createElement('div');
     row.className = 'answerRow';
     row.innerHTML = `
-      <div class="scoreBox">${item.score}</div>
-      <div class="answerMain">
-        <div class="answerTitle">${escapeHtml(item.name)}</div>
-        <div class="answerText">${escapeHtml(item.answer)}</div>
-        <div class="answerTime">${item.elapsedMs == null ? 'bez času' : 'čas: ' + formatElapsed(item.elapsedMs)}</div>
-      </div>
+      <div class="answerName">${escapeHtml(item.name)}</div>
+      <div class="answerAnswer">${escapeHtml(item.answer)}</div>
+      <div class="answerScore">${item.score}</div>
       <div class="pmBox">
         <button class="iconBtn plus" data-team="${item.teamId}" data-delta="1">+</button>
         <button class="iconBtn minus" data-team="${item.teamId}" data-delta="-1">−</button>
@@ -585,20 +570,22 @@ async function adjustScore(teamId, delta) {
   await runTransaction(teamScoreRef, current => Math.max(0, Number(current || 0) + delta));
 }
 
-function finalRankingData() {
-  return Object.entries(state.roomData?.teams || {})
+function finalRankingData(roomArg = null) {
+  const teams = roomArg?.teams || state.roomData?.teams || {};
+  return Object.entries(teams)
     .filter(([, t]) => t.status === 'accepted')
     .map(([teamId, t]) => ({ teamId, name: t.name || 'Bez názvu', score: t.score || 0, joinedAt: t.joinedAt || 0 }))
     .sort((a, b) => (b.score - a.score) || (a.joinedAt - b.joinedAt));
 }
 
-function renderFinalRanking() {
-  const data = finalRankingData();
+function renderFinalRanking(roomArg = null) {
+  const data = finalRankingData(roomArg);
   els.finalRanking.innerHTML = '';
   if (!data.length) {
     els.finalRanking.innerHTML = '<div class="empty">Žádné přijaté týmy.</div>';
     return;
   }
+
   data.forEach((item, i) => {
     const row = document.createElement('div');
     row.className = 'rankRow';
@@ -606,24 +593,10 @@ function renderFinalRanking() {
       <div class="place">${i + 1}.</div>
       <div>
         <div class="teamName">${escapeHtml(item.name)}</div>
-        <div class="small">Celkem bodů</div>
       </div>
-      <div class="scoreBox">${item.score}</div>`;
+      <div class="answerScore">${item.score}</div>`;
     els.finalRanking.appendChild(row);
   });
-}
-
-function formatElapsed(ms) {
-  const total = Math.max(0, Math.round(ms));
-  const sec = Math.floor(total / 1000);
-  const rest = String(total % 1000).padStart(3, '0');
-  return `${sec}.${rest} s`;
-}
-
-function formatClock(ts) {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  return d.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 function escapeHtml(text) {
@@ -647,6 +620,7 @@ function readableError(error) {
 
 function resetLocalState(reload = true) {
   if (state.unsubscribe) state.unsubscribe();
+  state.unsubscribe = null;
   localStorage.removeItem('quiz_roomCode');
   localStorage.removeItem('quiz_role');
   localStorage.removeItem('quiz_teamId');

@@ -535,11 +535,13 @@ function renderAnswers() {
   const room = state.roomData;
   const teams = room.teams || {};
   const round = room.currentRound;
+  const roundDelta = room.roundScoreDelta?.[round] || {};
   const answers = Object.entries(room.rounds?.[round] || {}).map(([teamId, val]) => ({
     teamId,
     name: teams[teamId]?.name || val.teamName || 'Bez názvu',
     score: teams[teamId]?.score || 0,
     answer: val.answer || '',
+    roundDelta: Number(roundDelta[teamId] || 0),
     elapsedMs: val.elapsedMs ?? 999999999,
     submittedAt: val.submittedAt || 0
   })).sort((a, b) => (a.elapsedMs - b.elapsedMs) || (a.submittedAt - b.submittedAt));
@@ -547,7 +549,14 @@ function renderAnswers() {
   const missing = Object.entries(teams)
     .filter(([, t]) => t.status === 'accepted')
     .filter(([teamId]) => !answers.some(a => a.teamId === teamId))
-    .map(([teamId, t]) => ({ teamId, name: t.name, score: t.score || 0, answer: 'Neodesláno', elapsedMs: null }));
+    .map(([teamId, t]) => ({
+      teamId,
+      name: t.name,
+      score: t.score || 0,
+      answer: 'Neodesláno',
+      roundDelta: Number(roundDelta[teamId] || 0),
+      elapsedMs: null
+    }));
 
   const all = [...answers, ...missing];
   els.answersList.innerHTML = '';
@@ -564,6 +573,8 @@ function renderAnswers() {
   for (const item of all) {
     const row = document.createElement('div');
     row.className = 'answerRow';
+    if (item.roundDelta > 0) row.classList.add('row-positive');
+    if (item.roundDelta < 0) row.classList.add('row-negative');
     row.innerHTML = `
       <div class="answerName">${escapeHtml(item.name)}</div>
       <div class="answerAnswer">${escapeHtml(item.answer)}</div>
@@ -582,8 +593,13 @@ function renderAnswers() {
 }
 
 async function adjustScore(teamId, delta) {
+  const round = state.roomData?.currentRound;
   const teamScoreRef = ref(db, `rooms/${state.roomCode}/teams/${teamId}/score`);
-  await runTransaction(teamScoreRef, current => Math.max(0, Number(current || 0) + delta));
+  const roundDeltaRef = ref(db, `rooms/${state.roomCode}/roundScoreDelta/${round}/${teamId}`);
+  await Promise.all([
+    runTransaction(teamScoreRef, current => Number(current || 0) + delta),
+    runTransaction(roundDeltaRef, current => Number(current || 0) + delta)
+  ]);
 }
 
 function finalRankingData(roomArg = null) {

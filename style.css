@@ -52,8 +52,10 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .tableAnswers{gap:8px}
 .tableHeader,.answerRow{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1.6fr) 110px 128px;gap:10px;align-items:center}
 .tableHeader{padding:0 10px 6px;color:var(--muted);font-size:13px;font-weight:700}
-.answerName,.answerAnswer,.answerScore{word-break:break-word}
-.answerScore{font-size:22px;font-weight:800;text-align:center}
+.answerName,.answerAnswer,.answerScore{word-break:break-word;font-size:40px;line-height:1.15;font-weight:800}
+.answerScore{text-align:center}
+.answerRow.row-positive{background:rgba(22,163,74,.24);border-color:rgba(22,163,74,.65)}
+.answerRow.row-negative{background:rgba(220,38,38,.24);border-color:rgba(220,38,38,.65)}
 .pmBox{display:flex;gap:8px;justify-content:flex-end}
 .iconBtn{width:56px;height:56px;border-radius:50%;padding:0;font-size:32px;line-height:1;display:flex;align-items:center;justify-content:center}
 .plus{background:var(--green)}
@@ -67,6 +69,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
   .teamActions button{flex:1 1 140px}
   .tableHeader{display:none}
   .answerRow{grid-template-columns:1fr;gap:8px}
+  .answerName,.answerAnswer,.answerScore{font-size:28px}
   .answerScore{text-align:left}
   .pmBox{justify-content:flex-start}
   .bigText{font-size:26px}

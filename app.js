@@ -29,7 +29,10 @@ const els = {
   pendingTeams: $('pendingTeams'), acceptedTeams: $('acceptedTeams'), startGameBtn: $('startGameBtn'), stopRoundBtn: $('stopRoundBtn'), hostCodeBars: document.querySelectorAll('.hostCodeBar'),
   answersList: $('answersList'), nextRoundBtn: $('nextRoundBtn'), endGameBtn: $('endGameBtn'), finalRanking: $('finalRanking'),
   newRoomBtn: $('newRoomBtn'), waitingText: $('waitingText'), answerInput: $('answerInput'), submitAnswerBtn: $('submitAnswerBtn'),
-  submitState: $('submitState')
+  submitState: $('submitState'),
+  timedSeconds: $('timedSeconds'), timedStartBtn: $('timedStartBtn'),
+  nextTimedSeconds: $('nextTimedSeconds'), nextTimedStartBtn: $('nextTimedStartBtn'),
+  countdown: $('countdown')
 };
 
 const joinHintEl = document.querySelector('#joinView .hint');
@@ -45,16 +48,20 @@ const state = {
   authReady: false,
   authUid: '',
   authError: '',
-  finishedSnapshot: null
+  finishedSnapshot: null,
+  countdownInterval: null,
+  stoppingRound: false
 };
 
 if (state.roomCode) els.roomCode.value = state.roomCode;
 
 els.randomBtn.addEventListener('click', () => { els.roomCode.value = randomCode(); });
 els.joinBtn.addEventListener('click', joinOrCreateRoom);
-els.startGameBtn.addEventListener('click', startGame);
-els.stopRoundBtn.addEventListener('click', stopRound);
-els.nextRoundBtn.addEventListener('click', nextRound);
+els.startGameBtn.addEventListener('click', () => startRound(null));
+els.timedStartBtn.addEventListener('click', () => startRound(readSeconds(els.timedSeconds)));
+els.nextRoundBtn.addEventListener('click', () => startRound(null));
+els.nextTimedStartBtn.addEventListener('click', () => startRound(readSeconds(els.nextTimedSeconds)));
+els.stopRoundBtn.addEventListener('click', () => stopRound('manual'));
 els.endGameBtn.addEventListener('click', endGame);
 const endGameBtnResults = document.getElementById('endGameBtnResults');
 if (endGameBtnResults) endGameBtnResults.addEventListener('click', endGame);
@@ -83,6 +90,12 @@ function sanitizeCode(value) {
 
 function sanitizeName(value) {
   return (value || '').trim().slice(0, 40);
+}
+
+function readSeconds(inputEl) {
+  const raw = Number((inputEl?.value || '').toString().replace(',', '.'));
+  if (!Number.isFinite(raw) || raw <= 0) return null;
+  return Math.max(1, Math.round(raw));
 }
 
 function bootAuth() {
@@ -153,9 +166,12 @@ async function joinOrCreateRoom() {
           currentRound: 0,
           roundStartedAt: null,
           roundStoppedAt: null,
+          roundTimeLimitSec: null,
+          roundDeadlineAt: null,
           lastActionAt: Date.now(),
           teams: {},
-          rounds: {}
+          rounds: {},
+          roundScoreDelta: {}
         };
       }, { applyLocally: false });
     } catch (error) {
@@ -235,6 +251,7 @@ function subscribeRoom(roomCode) {
     state.roomData = snapshot.val();
 
     if (!state.roomData) {
+      clearCountdownTicker();
       const finishedData = state.finishedSnapshot;
       const wasHost = state.role === 'host';
       resetLocalState(false);
@@ -306,6 +323,7 @@ function render() {
   }
 
   if (!state.roomData) {
+    clearCountdownTicker();
     showOnly('joinView');
     return;
   }
@@ -339,17 +357,26 @@ function renderHost() {
   renderAcceptedList(accepted);
 
   if (room.status === 'lobby') {
+    clearCountdownTicker();
     showOnly('hostLobbyView');
     els.startGameBtn.disabled = accepted.length === 0;
+    els.timedStartBtn.disabled = accepted.length === 0;
   } else if (room.status === 'round_active') {
     showOnly('hostRoundView');
+    syncHostCountdown();
+    maybeAutoStopRound();
   } else if (room.status === 'round_stopped') {
+    clearCountdownTicker();
     showOnly('hostResultsView');
     renderAnswers();
+    els.nextRoundBtn.disabled = accepted.length === 0;
+    els.nextTimedStartBtn.disabled = accepted.length === 0;
   } else if (room.status === 'finished') {
+    clearCountdownTicker();
     showOnly('hostFinalView');
     renderFinalRanking(room);
   } else {
+    clearCountdownTicker();
     showOnly('hostLobbyView');
   }
 }
@@ -402,6 +429,7 @@ function getMyTeam() {
 }
 
 function renderPlayer() {
+  clearCountdownTicker();
   const room = state.roomData;
   const myTeam = getMyTeam();
   if (!myTeam) {
@@ -451,41 +479,86 @@ function currentAnswer() {
   return room.rounds?.[room.currentRound]?.[state.teamId] || null;
 }
 
-async function startGame() {
+async function startRound(limitSec = null) {
   if (!ensureAuthReady()) return;
-  const accepted = Object.values(state.roomData?.teams || {}).filter(t => t.status === 'accepted');
+  const accepted = Object.entries(state.roomData?.teams || {}).filter(([, t]) => t.status === 'accepted');
   if (!accepted.length) {
     alert('Nejdřív přijmi alespoň jeden tým.');
     return;
   }
-  await update(ref(db, `rooms/${state.roomCode}`), {
+
+  const nextRound = (state.roomData.currentRound || 0) + 1;
+  const startedAt = Date.now();
+  const patch = {
     status: 'round_active',
-    currentRound: (state.roomData.currentRound || 0) + 1,
-    roundStartedAt: Date.now(),
+    currentRound: nextRound,
+    roundStartedAt: startedAt,
     roundStoppedAt: null,
-    lastActionAt: Date.now()
-  });
+    roundTimeLimitSec: limitSec || null,
+    roundDeadlineAt: limitSec ? startedAt + limitSec * 1000 : null,
+    lastActionAt: startedAt
+  };
+
+  await update(ref(db, `rooms/${state.roomCode}`), patch);
 }
 
-async function stopRound() {
-  if (!ensureAuthReady()) return;
-  await update(ref(db, `rooms/${state.roomCode}`), {
-    status: 'round_stopped',
-    roundStoppedAt: Date.now(),
-    lastActionAt: Date.now()
-  });
+async function stopRound(reason = 'manual') {
+  if (!ensureAuthReady() || state.stoppingRound) return;
+  state.stoppingRound = true;
+  try {
+    await runTransaction(ref(db, `rooms/${state.roomCode}`), current => {
+      if (!current || current.status !== 'round_active') return current;
+      current.status = 'round_stopped';
+      current.roundStoppedAt = Date.now();
+      current.roundStopReason = reason;
+      current.lastActionAt = Date.now();
+      return current;
+    }, { applyLocally: false });
+  } finally {
+    setTimeout(() => { state.stoppingRound = false; }, 250);
+  }
 }
 
-async function nextRound() {
-  if (!ensureAuthReady()) return;
-  els.answerInput.value = '';
-  await update(ref(db, `rooms/${state.roomCode}`), {
-    status: 'round_active',
-    currentRound: (state.roomData.currentRound || 0) + 1,
-    roundStartedAt: Date.now(),
-    roundStoppedAt: null,
-    lastActionAt: Date.now()
-  });
+function syncHostCountdown() {
+  const room = state.roomData;
+  const deadline = Number(room?.roundDeadlineAt || 0);
+  if (!deadline) {
+    els.countdown.textContent = '';
+    clearCountdownTicker();
+    return;
+  }
+
+  const tick = () => {
+    const leftMs = Math.max(0, deadline - Date.now());
+    const sec = Math.ceil(leftMs / 1000);
+    els.countdown.textContent = String(sec).padStart(2, '0');
+    if (leftMs <= 0) stopRound('timer');
+  };
+
+  tick();
+  if (state.countdownInterval) return;
+  state.countdownInterval = setInterval(tick, 250);
+}
+
+function clearCountdownTicker() {
+  if (state.countdownInterval) {
+    clearInterval(state.countdownInterval);
+    state.countdownInterval = null;
+  }
+  if (els.countdown) els.countdown.textContent = '';
+}
+
+function maybeAutoStopRound() {
+  const room = state.roomData;
+  if (!room || room.status !== 'round_active') return;
+  const acceptedIds = Object.entries(room.teams || {})
+    .filter(([, team]) => team.status === 'accepted')
+    .map(([teamId]) => teamId);
+  if (!acceptedIds.length) return;
+
+  const roundAnswers = room.rounds?.[room.currentRound] || {};
+  const allAnswered = acceptedIds.every(teamId => !!roundAnswers[teamId]);
+  if (allAnswered) stopRound('all_answered');
 }
 
 async function endGame() {
@@ -651,6 +724,7 @@ function readableError(error) {
 }
 
 function resetLocalState(reload = true) {
+  clearCountdownTicker();
   if (state.unsubscribe) state.unsubscribe();
   state.unsubscribe = null;
   localStorage.removeItem('quiz_roomCode');

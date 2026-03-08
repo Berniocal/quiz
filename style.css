@@ -86,3 +86,17 @@ button:disabled{opacity:.55;cursor:not-allowed}
   text-align:center;
   letter-spacing:.04em;
 }
+
+
+.timeStartWrap{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+.timeStartWrap input{max-width:180px}
+.timeStartWrap button{flex:1 1 220px}
+.countdownBox{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;min-height:240px;width:100%}
+.countdownLabel{color:var(--muted);font-size:20px;font-weight:700}
+.countdownValue{font-size:88px;line-height:1;font-weight:900;letter-spacing:.04em}
+.bigBtn{font-size:22px;padding:18px 20px;min-height:64px}
+@media (max-width:700px){
+  .timeStartWrap{flex-direction:column;align-items:stretch}
+  .timeStartWrap input{max-width:none}
+  .countdownValue{font-size:64px}
+}

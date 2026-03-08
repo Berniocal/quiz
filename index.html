@@ -40,12 +40,20 @@
         <button id="startGameBtn">Začít hru</button>
         <button id="endGameBtn" class="secondary">Ukončit hru</button>
       </div>
+      <div class="timeStartWrap">
+        <input id="timedSeconds" type="number" min="1" step="1" placeholder="čas kola v sekundách">
+        <button id="timedStartBtn" class="secondary">Spustit na čas</button>
+      </div>
     </section>
 
     <section id="hostRoundView" class="card hidden cleanView centerView">
       <div class="hostCodeBar"></div>
-      <div class="actions cleanActions singleAction">
-        <button id="stopRoundBtn" class="danger bigBtn">Skončit kolo</button>
+      <div class="countdownBox">
+        <div class="countdownLabel">Zbývající čas</div>
+        <div id="countdown" class="countdownValue"></div>
+        <div class="actions cleanActions singleAction">
+          <button id="stopRoundBtn" class="danger bigBtn">Skončit kolo</button>
+        </div>
       </div>
     </section>
 
@@ -55,6 +63,10 @@
       <div class="actions cleanActions">
         <button id="nextRoundBtn">Další kolo</button>
         <button id="endGameBtnResults" class="secondary">Ukončit hru</button>
+      </div>
+      <div class="timeStartWrap">
+        <input id="nextTimedSeconds" type="number" min="1" step="1" placeholder="čas kola v sekundách">
+        <button id="nextTimedStartBtn" class="secondary">Další kolo na čas</button>
       </div>
     </section>
 

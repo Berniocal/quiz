@@ -38,6 +38,9 @@
       <div id="acceptedTeams" class="list compactList"></div>
       <div class="actions cleanActions">
         <button id="startGameBtn">Začít hru</button>
+        <button id="uploadPresentationBtn">Nahrát prezentaci</button>
+        <button id="togglePresentationBtn">Prezentace</button>
+<input type="file" id="presentationFile" accept="application/pdf" style="display:none">
         <button id="endGameBtn" class="secondary">Ukončit hru</button>
       </div>
       <div class="timeStartWrap">
@@ -108,5 +111,17 @@
   </div>
 
   <script type="module" src="./app.js"></script>
+
+  <div id="presentationPanel" style="display:none; margin-top:20px">
+
+  <div style="margin-bottom:10px">
+    <button id="slidePrev">◀</button>
+    <span id="slideInfo"></span>
+    <button id="slideNext">▶</button>
+  </div>
+
+  <iframe id="presentationFrame" width="100%" height="600"></iframe>
+
+</div>
 </body>
 </html>

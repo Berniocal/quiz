@@ -949,3 +949,22 @@ document.addEventListener("keydown", e => {
   if (e.key === "ArrowLeft") document.getElementById("slidePrev").click();
 
 });
+
+// ===== ZOBRAZENÍ / SKRYTÍ PREZENTACE =====
+
+const presentationPanel = document.getElementById("presentationPanel");
+const togglePresentationBtn = document.getElementById("togglePresentationBtn");
+
+if (togglePresentationBtn && presentationPanel) {
+
+  togglePresentationBtn.addEventListener("click", () => {
+
+    if (presentationPanel.style.display === "none" || presentationPanel.style.display === "") {
+      presentationPanel.style.display = "block";
+    } else {
+      presentationPanel.style.display = "none";
+    }
+
+  });
+
+}

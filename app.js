@@ -950,14 +950,13 @@ document.addEventListener("keydown", e => {
 
 });
 
-// ===== ZOBRAZENÍ / SKRYTÍ PREZENTACE =====
 
 const presentationPanel = document.getElementById("presentationPanel");
-const togglePresentationBtn = document.getElementById("togglePresentationBtn");
+const presentationButtons = document.querySelectorAll(".togglePresentationBtn");
 
-if (togglePresentationBtn && presentationPanel) {
+presentationButtons.forEach(btn => {
 
-  togglePresentationBtn.addEventListener("click", () => {
+  btn.addEventListener("click", () => {
 
     if (presentationPanel.style.display === "none" || presentationPanel.style.display === "") {
       presentationPanel.style.display = "block";
@@ -967,7 +966,7 @@ if (togglePresentationBtn && presentationPanel) {
 
   });
 
-}
+});
 // ===== PŘIDÁNÍ TLAČÍTKA PREZENTACE NA VŠECHNY OBRAZOVKY =====
 
 function addPresentationButton() {

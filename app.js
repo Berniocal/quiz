@@ -813,110 +813,131 @@ function resetLocalState(reload = true) {
   if (reload) location.reload();
 }
 
+// ===== PREZENTACE =====
 
-// ===== PREZENTACE (lokální v prohlížeči) =====
+let pdfDoc = null;
+let currentSlide = 1;
+let totalSlides = 1;
+let fileType = null;
+
+const canvas = document.getElementById("pdfCanvas");
+const ctx = canvas ? canvas.getContext("2d") : null;
+const pptContainer = document.getElementById("pptContainer");
+const slideInfo = document.getElementById("slideInfo");
 
 const uploadBtn = document.getElementById("uploadPresentationBtn");
 const fileInput = document.getElementById("presentationFile");
-const panel = document.getElementById("presentationPanel");
-const frame = document.getElementById("presentationFrame");
-const slideInfo = document.getElementById("slideInfo");
-
-let presentationURL = "";
-let currentSlide = Number(localStorage.getItem("quizSlide") || 1);
 
 if (uploadBtn) {
 
   uploadBtn.onclick = () => fileInput.click();
 
-  fileInput.onchange = e => {
+  fileInput.onchange = async e => {
 
     const file = e.target.files[0];
     if (!file) return;
 
-    presentationURL = URL.createObjectURL(file);
+    const url = URL.createObjectURL(file);
 
-    currentSlide = 1;
+    if (file.name.endsWith(".pdf")) {
 
-    showSlide();
+      fileType = "pdf";
 
-  };
+      pptContainer.innerHTML = "";
+      canvas.style.display = "block";
 
-}
+      const loadingTask = pdfjsLib.getDocument(url);
+      pdfDoc = await loadingTask.promise;
 
-const toggleBtn = document.getElementById("togglePresentationBtn");
+      totalSlides = pdfDoc.numPages;
+      currentSlide = 1;
 
-if (toggleBtn) {
-
-  toggleBtn.onclick = () => {
-
-    panel.style.display =
-      panel.style.display === "none" ? "block" : "none";
-
-  };
-
-}
-
-function showSlide() {
-
-  if (!presentationURL) return;
-
-  frame.src = presentationURL + "#page=" + currentSlide;
-
-  slideInfo.innerText = "Snímek " + currentSlide;
-
-  localStorage.setItem("quizSlide", currentSlide);
-
-}
-
-const nextBtn = document.getElementById("slideNext");
-const prevBtn = document.getElementById("slidePrev");
-
-if (nextBtn) {
-
-  nextBtn.onclick = () => {
-
-    currentSlide++;
-    showSlide();
-
-  };
-
-}
-
-if (prevBtn) {
-
-  prevBtn.onclick = () => {
-
-    if (currentSlide <= 1) return;
-
-    currentSlide--;
-    showSlide();
-
-  };
-
-}
-
-// ovládání šipkami
-document.addEventListener("keydown", e => {
-
-  if (!presentationURL) return;
-
-  if (e.key === "ArrowRight") {
-
-    currentSlide++;
-    showSlide();
-
-  }
-
-  if (e.key === "ArrowLeft") {
-
-    if (currentSlide > 1) {
-
-      currentSlide--;
-      showSlide();
+      renderPdf();
 
     }
 
-  }
+    if (file.name.endsWith(".pptx")) {
+
+      fileType = "pptx";
+
+      canvas.style.display = "none";
+      pptContainer.innerHTML = "";
+
+      $("#pptContainer").pptxToHtml({
+        pptxFileUrl: url
+      });
+
+      setTimeout(() => {
+
+        totalSlides = document.querySelectorAll("#pptContainer section").length;
+        currentSlide = 1;
+        showPptSlide();
+
+      }, 500);
+
+    }
+
+  };
+
+}
+
+function renderPdf() {
+
+  pdfDoc.getPage(currentSlide).then(page => {
+
+    const viewport = page.getViewport({ scale: 1.5 });
+
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    page.render({
+      canvasContext: ctx,
+      viewport: viewport
+    });
+
+    slideInfo.innerText = currentSlide + " / " + totalSlides;
+
+  });
+
+}
+
+function showPptSlide() {
+
+  const slides = document.querySelectorAll("#pptContainer section");
+
+  slides.forEach((s, i) => {
+    s.style.display = (i === currentSlide - 1) ? "block" : "none";
+  });
+
+  slideInfo.innerText = currentSlide + " / " + totalSlides;
+
+}
+
+document.getElementById("slideNext").onclick = () => {
+
+  if (currentSlide >= totalSlides) return;
+
+  currentSlide++;
+
+  if (fileType === "pdf") renderPdf();
+  if (fileType === "pptx") showPptSlide();
+
+};
+
+document.getElementById("slidePrev").onclick = () => {
+
+  if (currentSlide <= 1) return;
+
+  currentSlide--;
+
+  if (fileType === "pdf") renderPdf();
+  if (fileType === "pptx") showPptSlide();
+
+};
+
+document.addEventListener("keydown", e => {
+
+  if (e.key === "ArrowRight") document.getElementById("slideNext").click();
+  if (e.key === "ArrowLeft") document.getElementById("slidePrev").click();
 
 });

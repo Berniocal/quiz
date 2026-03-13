@@ -968,3 +968,39 @@ if (togglePresentationBtn && presentationPanel) {
   });
 
 }
+// ===== PŘIDÁNÍ TLAČÍTKA PREZENTACE NA VŠECHNY OBRAZOVKY =====
+
+function addPresentationButton() {
+
+  const screens = document.querySelectorAll(".screen");
+
+  screens.forEach(screen => {
+
+    if (screen.querySelector(".presentationBtn")) return;
+
+    const btn = document.createElement("button");
+    btn.textContent = "Prezentace";
+    btn.className = "presentationBtn";
+
+    btn.onclick = () => {
+
+      const panel = document.getElementById("presentationPanel");
+
+      if (panel.style.display === "none" || panel.style.display === "") {
+        panel.style.display = "block";
+      } else {
+        panel.style.display = "none";
+      }
+
+    };
+
+    screen.prepend(btn);
+
+  });
+
+}
+
+// spustí přidání tlačítka po načtení stránky
+window.addEventListener("load", () => {
+  addPresentationButton();
+});

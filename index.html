@@ -65,6 +65,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
         <div class="countdownLabel">Zbývající čas</div>
         <div id="countdown" class="countdownValue"></div>
         <div class="actions cleanActions singleAction">
+          <button id="togglePresentationBtn">Prezentace</button>
+<input type="file" id="presentationFile" accept=".pdf,.pptx" style="display:none">
           <button id="stopRoundBtn" class="danger bigBtn">Skončit kolo</button>
                  </div>
       </div>
@@ -75,6 +77,8 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
       <div id="answersList" class="answers tableAnswers"></div>
       <div class="actions cleanActions">
         <button id="nextRoundBtn">Další kolo</button>
+        <button id="togglePresentationBtn">Prezentace</button>
+<input type="file" id="presentationFile" accept=".pdf,.pptx" style="display:none">
                <button id="endGameBtnResults" class="secondary">Ukončit hru</button>
              </div>
       <div class="timeStartWrap">

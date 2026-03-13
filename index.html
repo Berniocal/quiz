@@ -142,17 +142,22 @@ border-radius:16px;
 box-shadow:0 0 40px rgba(0,0,0,0.6);
 ">
 
-  <div style="text-align:center;margin-bottom:10px">
+  <div style="text-align:center;margin-bottom:15px">
     <button id="slidePrev">◀</button>
-    <span id="slideInfo"></span>
+    <span id="slideInfo" style="margin:0 15px"></span>
     <button id="slideNext">▶</button>
   </div>
 
-  <div style="display:flex;justify-content:center">
-    <canvas id="pdfCanvas"></canvas>
+  <div style="display:flex;justify-content:center;align-items:center">
+    <canvas id="pdfCanvas" style="max-width:80vw;height:auto;"></canvas>
   </div>
 
-  <div id="pptContainer" style="display:flex;justify-content:center"></div>
+  <div id="pptContainer" style="
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  max-width:80vw;
+  "></div>
 
 </div>
 </body>

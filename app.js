@@ -708,19 +708,35 @@ function renderAnswers() {
     row.className = 'answerRow';
     if (item.roundDelta > 0) row.classList.add('row-positive');
     if (item.roundDelta < 0) row.classList.add('row-negative');
-    row.innerHTML = `
-      <div class="answerName">${escapeHtml(item.name)}</div>
-      <div class="answerAnswer">${escapeHtml(item.answer)}</div>
-      <div class="answerScore">${item.score}</div>
-      <div class="pmBox">
-        <button class="iconBtn plus" data-team="${item.teamId}" data-delta="1">+</button>
-        <button class="iconBtn minus" data-team="${item.teamId}" data-delta="-1">−</button>
-      </div>`;
+row.innerHTML = `
+  <div class="answerName">${escapeHtml(item.name)}</div>
+  <div class="answerAnswer">${escapeHtml(item.answer)}</div>
+  <div class="answerScore clickableScore" data-team="${item.teamId}">${item.score}</div>
+  <div class="pmBox">
+    <button class="iconBtn plus" data-team="${item.teamId}" data-delta="1">+</button>
+    <button class="iconBtn minus" data-team="${item.teamId}" data-delta="-1">−</button>
+  </div>`;
+    
     row.querySelectorAll('button').forEach(btn => btn.addEventListener('click', async e => {
       const teamId = e.currentTarget.dataset.team;
       const delta = Number(e.currentTarget.dataset.delta || 0);
       await adjustScore(teamId, delta);
     }));
+    const scoreEl = row.querySelector('.clickableScore');
+scoreEl.addEventListener('click', async () => {
+  const teamId = scoreEl.dataset.team;
+  const input = prompt('Počet získaných / ztracených bodů:');
+
+  if (input === null) return;
+
+  const delta = Number(input);
+  if (!Number.isFinite(delta)) {
+    alert('Zadej číslo (např. 350 nebo -350)');
+    return;
+  }
+
+  await adjustScore(teamId, delta);
+});
     els.answersList.appendChild(row);
   }
 }

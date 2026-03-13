@@ -1006,12 +1006,14 @@ window.addEventListener("load", () => {
 });
 // ===== tlačítko prezentace =====
 
-const toggleBtn = document.getElementById("togglePresentationBtn");
-const panel = document.getElementById("presentationPanel");
+window.addEventListener("DOMContentLoaded", () => {
 
-if (toggleBtn && panel) {
+  const toggleBtn = document.getElementById("togglePresentationBtn");
+  const panel = document.getElementById("presentationPanel");
 
-  toggleBtn.onclick = () => {
+  if (!toggleBtn || !panel) return;
+
+  toggleBtn.addEventListener("click", () => {
 
     if (panel.style.display === "none" || panel.style.display === "") {
       panel.style.display = "block";
@@ -1019,6 +1021,6 @@ if (toggleBtn && panel) {
       panel.style.display = "none";
     }
 
-  };
+  });
 
-}
+});

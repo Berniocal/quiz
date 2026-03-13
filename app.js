@@ -863,9 +863,17 @@ if (uploadBtn) {
       canvas.style.display = "none";
       pptContainer.innerHTML = "";
 
-      $("#pptContainer").pptxToHtml({
-        pptxFileUrl: url
-      });
+if (window.jQuery && $("#pptContainer").pptxToHtml) {
+
+  $("#pptContainer").pptxToHtml({
+    pptxFileUrl: url
+  });
+
+} else {
+
+  console.error("pptxjs není načteno");
+
+}
 
       setTimeout(() => {
 

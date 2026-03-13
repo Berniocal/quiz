@@ -827,7 +827,24 @@ const slideInfo = document.getElementById("slideInfo");
 
 const uploadBtn = document.getElementById("uploadPresentationBtn");
 const fileInput = document.getElementById("presentationFile");
+const presentationPanel = document.getElementById("presentationPanel");
 
+const presentationButtons = document.querySelectorAll(".togglePresentationBtn");
+
+// otevření / zavření prezentace
+presentationButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    if (!presentationPanel) return;
+
+    if (presentationPanel.style.display === "none" || presentationPanel.style.display === "") {
+      presentationPanel.style.display = "block";
+    } else {
+      presentationPanel.style.display = "none";
+    }
+  });
+});
+
+// nahrání souboru
 if (uploadBtn) {
 
   uploadBtn.onclick = () => fileInput.click();
@@ -839,7 +856,7 @@ if (uploadBtn) {
 
     const url = URL.createObjectURL(file);
 
-    if (file.name.endsWith(".pdf")) {
+    if (file.name.toLowerCase().endsWith(".pdf")) {
 
       fileType = "pdf";
 
@@ -856,24 +873,24 @@ if (uploadBtn) {
 
     }
 
-    if (file.name.endsWith(".pptx")) {
+    if (file.name.toLowerCase().endsWith(".pptx")) {
 
       fileType = "pptx";
 
       canvas.style.display = "none";
       pptContainer.innerHTML = "";
 
-if (window.jQuery && $("#pptContainer").pptxToHtml) {
+      if (window.jQuery && $("#pptContainer").pptxToHtml) {
 
-  $("#pptContainer").pptxToHtml({
-    pptxFileUrl: url
-  });
+        $("#pptContainer").pptxToHtml({
+          pptxFileUrl: url
+        });
 
-} else {
+      } else {
 
-  console.error("pptxjs není načteno");
+        console.error("pptxjs není načteno");
 
-}
+      }
 
       setTimeout(() => {
 
@@ -889,19 +906,24 @@ if (window.jQuery && $("#pptContainer").pptxToHtml) {
 
 }
 
+// vykreslení PDF
 function renderPdf() {
+
+  if (!pdfDoc) return;
 
   pdfDoc.getPage(currentSlide).then(page => {
 
-    const viewport = page.getViewport({ scale: 1.5 });
+    const viewport = page.getViewport({ scale: 1.6 });
 
-    canvas.height = viewport.height;
     canvas.width = viewport.width;
+    canvas.height = viewport.height;
 
-    page.render({
+    const renderContext = {
       canvasContext: ctx,
       viewport: viewport
-    });
+    };
+
+    page.render(renderContext);
 
     slideInfo.innerText = currentSlide + " / " + totalSlides;
 
@@ -909,6 +931,7 @@ function renderPdf() {
 
 }
 
+// zobrazení PPTX slide
 function showPptSlide() {
 
   const slides = document.querySelectorAll("#pptContainer section");
@@ -921,6 +944,7 @@ function showPptSlide() {
 
 }
 
+// další slide
 document.getElementById("slideNext").onclick = () => {
 
   if (currentSlide >= totalSlides) return;
@@ -932,6 +956,7 @@ document.getElementById("slideNext").onclick = () => {
 
 };
 
+// předchozí slide
 document.getElementById("slidePrev").onclick = () => {
 
   if (currentSlide <= 1) return;
@@ -943,28 +968,11 @@ document.getElementById("slidePrev").onclick = () => {
 
 };
 
+// ovládání klávesami
 document.addEventListener("keydown", e => {
 
   if (e.key === "ArrowRight") document.getElementById("slideNext").click();
   if (e.key === "ArrowLeft") document.getElementById("slidePrev").click();
-
-});
-
-
-const presentationPanel = document.getElementById("presentationPanel");
-const presentationButtons = document.querySelectorAll(".togglePresentationBtn");
-
-presentationButtons.forEach(btn => {
-
-  btn.addEventListener("click", () => {
-
-    if (presentationPanel.style.display === "none" || presentationPanel.style.display === "") {
-      presentationPanel.style.display = "block";
-    } else {
-      presentationPanel.style.display = "none";
-    }
-
-  });
 
 });
 // ===== PŘIDÁNÍ TLAČÍTKA PREZENTACE NA VŠECHNY OBRAZOVKY =====

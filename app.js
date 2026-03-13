@@ -812,3 +812,111 @@ function resetLocalState(reload = true) {
   state.roomData = null;
   if (reload) location.reload();
 }
+
+
+// ===== PREZENTACE (lokální v prohlížeči) =====
+
+const uploadBtn = document.getElementById("uploadPresentationBtn");
+const fileInput = document.getElementById("presentationFile");
+const panel = document.getElementById("presentationPanel");
+const frame = document.getElementById("presentationFrame");
+const slideInfo = document.getElementById("slideInfo");
+
+let presentationURL = "";
+let currentSlide = Number(localStorage.getItem("quizSlide") || 1);
+
+if (uploadBtn) {
+
+  uploadBtn.onclick = () => fileInput.click();
+
+  fileInput.onchange = e => {
+
+    const file = e.target.files[0];
+    if (!file) return;
+
+    presentationURL = URL.createObjectURL(file);
+
+    currentSlide = 1;
+
+    showSlide();
+
+  };
+
+}
+
+const toggleBtn = document.getElementById("togglePresentationBtn");
+
+if (toggleBtn) {
+
+  toggleBtn.onclick = () => {
+
+    panel.style.display =
+      panel.style.display === "none" ? "block" : "none";
+
+  };
+
+}
+
+function showSlide() {
+
+  if (!presentationURL) return;
+
+  frame.src = presentationURL + "#page=" + currentSlide;
+
+  slideInfo.innerText = "Snímek " + currentSlide;
+
+  localStorage.setItem("quizSlide", currentSlide);
+
+}
+
+const nextBtn = document.getElementById("slideNext");
+const prevBtn = document.getElementById("slidePrev");
+
+if (nextBtn) {
+
+  nextBtn.onclick = () => {
+
+    currentSlide++;
+    showSlide();
+
+  };
+
+}
+
+if (prevBtn) {
+
+  prevBtn.onclick = () => {
+
+    if (currentSlide <= 1) return;
+
+    currentSlide--;
+    showSlide();
+
+  };
+
+}
+
+// ovládání šipkami
+document.addEventListener("keydown", e => {
+
+  if (!presentationURL) return;
+
+  if (e.key === "ArrowRight") {
+
+    currentSlide++;
+    showSlide();
+
+  }
+
+  if (e.key === "ArrowLeft") {
+
+    if (currentSlide > 1) {
+
+      currentSlide--;
+      showSlide();
+
+    }
+
+  }
+
+});
